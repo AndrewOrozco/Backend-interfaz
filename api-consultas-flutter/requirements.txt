@@ -1,0 +1,16 @@
+# FastAPI y servidor
+fastapi
+uvicorn
+
+# Base de datos - usando aiopg
+databases[aiopg]
+aiopg
+psycopg2
+
+# HTTP Client para servicios externos
+httpx
+
+# Configuración
+pydantic
+pydantic-settings
+python-dotenv
