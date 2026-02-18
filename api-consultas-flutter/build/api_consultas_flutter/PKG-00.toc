@@ -1,0 +1,65 @@
+('E:\\compoente '
+ 'nuevo\\api-consultas-flutter\\build\\api_consultas_flutter\\api_consultas_flutter.pkg',
+ {'BINARY': True,
+  'DATA': True,
+  'EXECUTABLE': True,
+  'EXTENSION': True,
+  'PYMODULE': True,
+  'PYSOURCE': True,
+  'PYZ': False,
+  'SPLASH': True,
+  'SYMLINK': False},
+ [('pyi-contents-directory _internal', '', 'OPTION'),
+  ('PYZ-00.pyz',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\build\\api_consultas_flutter\\PYZ-00.pyz',
+   'PYZ'),
+  ('struct',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\build\\api_consultas_flutter\\localpycs\\struct.pyc',
+   'PYMODULE'),
+  ('pyimod01_archive',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\build\\api_consultas_flutter\\localpycs\\pyimod01_archive.pyc',
+   'PYMODULE'),
+  ('pyimod02_importers',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\build\\api_consultas_flutter\\localpycs\\pyimod02_importers.pyc',
+   'PYMODULE'),
+  ('pyimod03_ctypes',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\build\\api_consultas_flutter\\localpycs\\pyimod03_ctypes.pyc',
+   'PYMODULE'),
+  ('pyimod04_pywin32',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\build\\api_consultas_flutter\\localpycs\\pyimod04_pywin32.pyc',
+   'PYMODULE'),
+  ('pyiboot01_bootstrap',
+   'e:\\compoente '
+   'nuevo\\api-consultas-flutter\\.venv\\Lib\\site-packages\\PyInstaller\\loader\\pyiboot01_bootstrap.py',
+   'PYSOURCE'),
+  ('pyi_rth_inspect',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_inspect.py',
+   'PYSOURCE'),
+  ('pyi_rth_pkgutil',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_pkgutil.py',
+   'PYSOURCE'),
+  ('pyi_rth_multiprocessing',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_multiprocessing.py',
+   'PYSOURCE'),
+  ('pyi_rth_setuptools',
+   'E:\\compoente '
+   'nuevo\\api-consultas-flutter\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_setuptools.py',
+   'PYSOURCE'),
+  ('run', 'E:\\compoente nuevo\\api-consultas-flutter\\run.py', 'PYSOURCE')],
+ 'python313.dll',
+ True,
+ False,
+ False,
+ [],
+ None,
+ None,
+ None)

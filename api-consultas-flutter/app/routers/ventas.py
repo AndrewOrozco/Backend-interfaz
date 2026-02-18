@@ -13,6 +13,7 @@ import httpx
 
 from app.database import database
 from app.config import settings
+from app.url_global import get_host_from_db, ServiciosTerpel
 
 router = APIRouter()
 
@@ -103,19 +104,31 @@ async def _buscar_movimiento_por_cara(cara: int) -> dict | None:
     IMPORTANTE: En ct_movimientos, la 'cara' NO es una columna directa.
     Está dentro del campo 'atributos' (JSONB).
     
-    Java lo accede así (SqlQueryEnum.java):
-        SELECT cm.id FROM ct_movimientos cm 
-        WHERE cm.atributos::json->>'cara' = ?::text 
-        ORDER BY cm.fecha DESC LIMIT 1
-    
-    Usamos CAST() en vez de :: para compatibilidad con SQLAlchemy.
+    statusPump se obtiene de ventas_curso.atributos (donde Flutter lo guarda),
+    NO de ct_movimientos.atributos (LazoExpress no lo copia ahí).
     """
     
-    # Estrategia 1: ct_movimientos con cara en atributos JSON
-    # Java exacto: cm.atributos::json->>'cara' = ?::text
+    # Primero: obtener statusPump desde ventas_curso (fuente de verdad)
+    status_pump = False
+    try:
+        vc_query = "SELECT atributos FROM ventas_curso WHERE cara = :cara"
+        vc_row = await database.fetch_one(vc_query, {"cara": cara})
+        if vc_row:
+            vc_atributos = parse_atributos(vc_row['atributos'])
+            status_pump = bool(vc_atributos.get('statusPump', False))
+            # También verificar por factura_electronica
+            if not status_pump and vc_atributos.get('factura_electronica'):
+                status_pump = True
+            print(f"[API] ventas_curso cara {cara}: statusPump={status_pump}")
+        else:
+            print(f"[API] ventas_curso: no hay fila para cara {cara}")
+    except Exception as e:
+        print(f"[API] Error leyendo statusPump de ventas_curso: {e}")
+    
+    # Estrategia 1: ct_movimientos con cara en atributos JSON (solo hoy)
     try:
         query = """
-            SELECT cm.id, cm.venta_total, cm.estado, cm.fecha
+            SELECT cm.id, cm.venta_total, cm.estado, cm.fecha, cm.atributos
             FROM ct_movimientos cm 
             WHERE CAST(cm.atributos AS json)->>'cara' = :cara_text
               AND cm.fecha >= CURRENT_DATE
@@ -125,12 +138,27 @@ async def _buscar_movimiento_por_cara(cara: int) -> dict | None:
         row = await database.fetch_one(query, {"cara_text": str(cara)})
         if row:
             d = dict(row)
-            print(f"[API] Estrategia 1 OK: movimiento_id={d['id']}")
+            # Si ventas_curso no tenía fila, intentar leer statusPump de ct_movimientos.atributos
+            if not status_pump and d.get('atributos'):
+                cm_atributos = parse_atributos(d['atributos'])
+                if cm_atributos.get('statusPump'):
+                    status_pump = True
+                    print(f"[API] statusPump=True (fallback: ct_movimientos.atributos)")
+                elif cm_atributos.get('factura_electronica'):
+                    fe_val = cm_atributos['factura_electronica']
+                    if isinstance(fe_val, dict):
+                        status_pump = True
+                        print(f"[API] statusPump=True (fallback: factura_electronica en ct_movimientos)")
+                    elif isinstance(fe_val, str) and fe_val.upper() in ('SI', 'YES', 'TRUE'):
+                        status_pump = True
+                        print(f"[API] statusPump=True (fallback: factura_electronica={fe_val} en ct_movimientos)")
+            print(f"[API] Estrategia 1 OK: movimiento_id={d['id']}, status_pump={status_pump}")
             return {
                 "source": "ct_movimientos_atributos_json",
                 "movimiento_id": d['id'],
                 "monto": float(d.get('venta_total') or 0),
                 "estado": d.get('estado'),
+                "status_pump": status_pump,
             }
         else:
             print(f"[API] Estrategia 1: No se encontró movimiento hoy para cara {cara}")
@@ -149,12 +177,13 @@ async def _buscar_movimiento_por_cara(cara: int) -> dict | None:
         row = await database.fetch_one(query, {"cara_text": str(cara)})
         if row:
             d = dict(row)
-            print(f"[API] Estrategia 2 OK: movimiento_id={d['id']} (sin filtro fecha)")
+            print(f"[API] Estrategia 2 OK: movimiento_id={d['id']} (sin filtro fecha), status_pump={status_pump}")
             return {
                 "source": "ct_movimientos_atributos_any_date",
                 "movimiento_id": d['id'],
                 "monto": float(d.get('venta_total') or 0),
                 "estado": d.get('estado'),
+                "status_pump": status_pump,
             }
     except Exception as e:
         print(f"[API] Estrategia 2 falló: {e}")
@@ -180,11 +209,12 @@ async def _buscar_movimiento_por_cara(cara: int) -> dict | None:
         for row in rows:
             d = dict(row)
             if d.get('cara') == cara:
-                print(f"[API] Estrategia 3 OK: movimiento_id={d.get('numero')}")
+                print(f"[API] Estrategia 3 OK: movimiento_id={d.get('numero')}, status_pump={status_pump}")
                 return {
                     "source": "fnc_ventas_pendientes",
                     "movimiento_id": d.get('numero'),
                     "monto": float(d.get('total') or 0),
+                    "status_pump": status_pump,
                 }
     except Exception as e:
         print(f"[API] Estrategia 3 falló (fnc_consultar_ventas_pendientes): {e}")
@@ -329,6 +359,11 @@ async def obtener_ventas_sin_resolver(
                 if consecutivo_col:
                     prefijo = str(consecutivo_col)
             
+            # Extraer datos del cliente desde atributos (pre-cargados en statusPump)
+            cliente_attrs = atributos.get('cliente', {})
+            if not isinstance(cliente_attrs, dict):
+                cliente_attrs = {}
+            
             ventas.append({
                 "id": row_dict.get('numero'),
                 "prefijo": prefijo,
@@ -342,7 +377,22 @@ async def obtener_ventas_sin_resolver(
                 "proceso": proceso,
                 "estado_datafono": row_dict.get('descripcion_transaccion_estado_datafono', ''),
                 "placa": atributos.get('vehiculo_placa', ''),
-                "codigo_autorizacion": row_dict.get('codigo_autorizacion_datafono')
+                "codigo_autorizacion": row_dict.get('codigo_autorizacion_datafono'),
+                # Datos del cliente pre-cargados desde atributos
+                "cliente_nombre": (
+                    atributos.get('personas_nombre')
+                    or cliente_attrs.get('nombreRazonSocial')
+                    or ''
+                ),
+                "cliente_identificacion": (
+                    atributos.get('personas_identificacion')
+                    or cliente_attrs.get('numeroDocumento')
+                    or ''
+                ),
+                "cliente_tipo_documento": (
+                    cliente_attrs.get('tipoDocumento')
+                    or cliente_attrs.get('identificacion_cliente')
+                ),
             })
         
         # Calcular páginas
@@ -915,6 +965,25 @@ async def actualizar_medios_pago(request: ActualizarMediosPagoRequest):
         if not completado:
             print(f"[API] ⚠ fnc_actualizar_medios_de_pagos retornó False para movimiento {request.movimiento_id}")
             print(f"[API] ⚠ JSON enviado: {json_str}")
+        else:
+            # ── Finalizar proceso GoPass si existe ──
+            # Cuando GoPass es rechazado, tbl_transaccion_proceso queda con
+            # id_integracion=2, id_estado_proceso=1 (EN_ESPERA).
+            # Al gestionar la venta desde el wizard (asignar otro medio),
+            # debemos finalizar el proceso para que NO siga apareciendo en ventas sin resolver.
+            try:
+                gopass_update = """
+                    UPDATE procesos.tbl_transaccion_proceso 
+                    SET id_estado_proceso = 3
+                    WHERE id_movimiento = :mov_id 
+                      AND id_integracion = 2 
+                      AND id_estado_proceso NOT IN (3, 5, 6, 7)
+                """
+                result_gopass = await database.execute(gopass_update, {"mov_id": request.movimiento_id})
+                if result_gopass:
+                    print(f"[API] ✓ Proceso GoPass finalizado para movimiento {request.movimiento_id}")
+            except Exception as gp_err:
+                print(f"[API] Error finalizando proceso GoPass: {gp_err}")
         
         return {
             "success": completado,
@@ -1045,6 +1114,53 @@ async def guardar_medio_ventas_curso(request: GuardarMedioVentaCursoRequest):
         print(f"[API] ventas_curso actualizado OK para cara {request.cara}")
         print(f"[API] Atributos: {json.dumps(atributos)[:300]}...")
         
+        # ── TAMBIÉN persistir en ct_movimientos.atributos ──
+        # Necesario para que el guard en /ventas/imprimir y /enviar-fe-pump
+        # detecte GoPass/AppTerpel y NO envíe prematuramente al 7011
+        try:
+            cm_query = """
+                SELECT cm.id, cm.atributos
+                FROM ct_movimientos cm
+                WHERE CAST(cm.atributos AS json)->>'cara' = :cara_text
+                  AND cm.fecha >= CURRENT_DATE
+                ORDER BY cm.fecha DESC, cm.id DESC
+                LIMIT 1
+            """
+            cm_row = await database.fetch_one(cm_query, {"cara_text": str(request.cara)})
+            if cm_row:
+                cm_atributos = {}
+                if cm_row['atributos']:
+                    if isinstance(cm_row['atributos'], str):
+                        cm_atributos = json.loads(cm_row['atributos'])
+                    else:
+                        cm_atributos = dict(cm_row['atributos'])
+                # Copiar DatosFactura, gopass_v2, isAppTerpel
+                cm_atributos['DatosFactura'] = atributos.get('DatosFactura', {})
+                if 'gopass_v2' in atributos:
+                    cm_atributos['gopass_v2'] = atributos['gopass_v2']
+                else:
+                    cm_atributos.pop('gopass_v2', None)
+                if 'isAppTerpel' in atributos:
+                    cm_atributos['isAppTerpel'] = atributos['isAppTerpel']
+                else:
+                    cm_atributos.pop('isAppTerpel', None)
+                cm_update = """
+                    UPDATE ct_movimientos
+                    SET atributos = CAST(:atributos AS json)
+                    WHERE id = :id
+                """
+                await database.execute(cm_update, {
+                    "atributos": json.dumps(cm_atributos, default=str),
+                    "id": cm_row['id'],
+                })
+                print(f"[API] Medio de pago persistido en ct_movimientos id={cm_row['id']} (medio_pago={request.medio_pago_id})")
+            else:
+                print(f"[API] No se encontró ct_movimiento para cara {request.cara}, medio solo en ventas_curso")
+        except Exception as cm_err:
+            print(f"[API] Error persistiendo medio en ct_movimientos: {cm_err}")
+            import traceback
+            traceback.print_exc()
+        
         return {
             "success": True,
             "message": f"Medio de pago guardado en venta curso cara {request.cara}",
@@ -1169,7 +1285,10 @@ async def guardar_datos_factura_ventas_curso(request: GuardarDatosFacturaVentasC
                     request.tipo_documento, "Cédula de ciudadanía"
                 )
             
-            fe_obj['pendiente_impresion'] = True
+            # GoPass/AppTerpel: NO marcar pendiente_impresion=True (Java: aplicarImprimirFalse)
+            # La impresión se dispara después del callback del orquestador, no aquí.
+            es_orquestador = atributos.get('gopass_v2') is not None or atributos.get('isAppTerpel', False)
+            fe_obj['pendiente_impresion'] = not es_orquestador
             fe_obj['sinSistema'] = fe_obj.get('sinSistema', False)
             fe_obj['errorFaltaCampos'] = fe_obj.get('errorFaltaCampos', False)
             
@@ -1182,7 +1301,7 @@ async def guardar_datos_factura_ventas_curso(request: GuardarDatosFacturaVentasC
                 "numeroDocumento": request.identificacion_cliente or "222222222222",
                 "nombreComercial": request.nombre_cliente or "CONSUMIDOR FINAL",
                 "nombreRazonSocial": request.nombre_cliente or "CONSUMIDOR FINAL",
-                "pendiente_impresion": True,
+                "pendiente_impresion": not (atributos.get('gopass_v2') is not None or atributos.get('isAppTerpel', False)),
                 "sinSistema": False,
                 "errorFaltaCampos": False,
                 "asignarCliente": True,
@@ -1288,6 +1407,47 @@ async def guardar_datos_factura_ventas_curso(request: GuardarDatosFacturaVentasC
         print(f"[API] statusPump={atributos.get('statusPump')}")
         print(f"[API] factura_electronica={'SI' if 'factura_electronica' in atributos else 'NO'}")
         print(f"[API] Atributos: {atributos_json[:500]}...")
+        
+        # ── PERSISTIR statusPump en ct_movimientos.atributos ──
+        # Cuando LazoExpress procesa la venta, borra ventas_curso.
+        # Para que venta-activa-cara todavía lea statusPump=True,
+        # lo guardamos también en ct_movimientos.atributos (movimiento de hoy).
+        if atributos.get('statusPump'):
+            try:
+                cm_query = """
+                    SELECT cm.id, cm.atributos
+                    FROM ct_movimientos cm
+                    WHERE CAST(cm.atributos AS json)->>'cara' = :cara_text
+                      AND cm.fecha >= CURRENT_DATE
+                    ORDER BY cm.fecha DESC, cm.id DESC
+                    LIMIT 1
+                """
+                cm_row = await database.fetch_one(cm_query, {"cara_text": str(request.cara)})
+                if cm_row:
+                    cm_atributos = {}
+                    if cm_row['atributos']:
+                        if isinstance(cm_row['atributos'], str):
+                            cm_atributos = json_lib.loads(cm_row['atributos'])
+                        else:
+                            cm_atributos = dict(cm_row['atributos'])
+                    cm_atributos['statusPump'] = True
+                    # Copiar factura_electronica si existe para que no se pierda
+                    if 'factura_electronica' in atributos and 'factura_electronica' not in cm_atributos:
+                        cm_atributos['factura_electronica'] = atributos['factura_electronica']
+                    cm_update = """
+                        UPDATE ct_movimientos
+                        SET atributos = CAST(:atributos AS json)
+                        WHERE id = :id
+                    """
+                    await database.execute(cm_update, {
+                        "atributos": json_lib.dumps(cm_atributos, default=str),
+                        "id": cm_row['id'],
+                    })
+                    print(f"[API] statusPump=True persistido en ct_movimientos id={cm_row['id']}")
+                else:
+                    print(f"[API] No se encontró ct_movimiento actual para cara {request.cara}, statusPump solo en ventas_curso")
+            except Exception as cm_err:
+                print(f"[API] Error persistiendo statusPump en ct_movimientos: {cm_err}")
         
         return {
             "success": True,
@@ -1937,25 +2097,127 @@ async def get_tiempo_mensaje_appterpel():
 # IMPRESIÓN DE TICKET DE VENTA
 # ============================================================
 # Java: ImpresionVenta.impirmir() → POST http://localhost:8001/print-ticket/sales
-# El servicio de impresión (puerto 8001) genera y envía el ticket a la impresora.
+# Directo a print service (8001), sin pasar por LazoExpress.
+# Body: { movement_id, flow_type, report_type, body: {} }
 
 class ImprimirVentaRequest(BaseModel):
     movimiento_id: int
     report_type: str = "FACTURA"
 
+async def _build_payload_fe_from_atributos(movimiento_id: int, atributos: dict) -> dict | None:
+    """Construye payload para 7011 desde ct_movimientos.atributos (factura_electronica + venta).
+    Incluye medios de pago desde ct_movimientos_medios_pagos (como Java)."""
+    fe = atributos.get("factura_electronica")
+    if not fe or not isinstance(fe, dict):
+        return None
+    if not atributos.get("statusPump"):
+        return None
+    cliente = dict(fe)
+    # Asegurar campos que espera el 7011
+    if "numeroDocumento" not in cliente and "documentoCliente" in cliente:
+        cliente["numeroDocumento"] = str(cliente["documentoCliente"])
+    if "tipoDocumento" not in cliente and "identificacion_cliente" in cliente:
+        cliente["tipoDocumento"] = cliente["identificacion_cliente"]
+
+    payload = {
+        "venta": {"identificadorMovimiento": movimiento_id},
+        "cliente": cliente,
+        "identificadorMovimiento": movimiento_id,
+    }
+
+    # ── Incluir pagos (medios de pago) como Java ──
+    try:
+        pagos_rows = await database.fetch_all(
+            """SELECT cmmp.id, cmmp.valor_total, cmmp.ct_medios_pagos_id, cmp.descripcion
+               FROM ct_movimientos_medios_pagos cmmp
+               INNER JOIN ct_medios_pagos cmp ON cmmp.ct_medios_pagos_id = cmp.id
+               WHERE cmmp.ct_movimientos_id = :mov_id""",
+            {"mov_id": movimiento_id},
+        )
+        if pagos_rows:
+            payload["pagos"] = [
+                {
+                    "id": r["id"],
+                    "valor_total": float(r["valor_total"]) if r["valor_total"] else 0,
+                    "medioPagoId": r["ct_medios_pagos_id"],
+                    "descripcion": r["descripcion"] or "",
+                }
+                for r in pagos_rows
+            ]
+            print(f"[API] Payload FE enriquecido con {len(pagos_rows)} medio(s) de pago")
+    except Exception as e:
+        print(f"[API] Error obteniendo pagos para mov {movimiento_id}: {e}")
+
+    return payload
+
+
 @router.post("/imprimir")
 async def imprimir_venta(req: ImprimirVentaRequest):
     """
-    Envía la orden de impresión al servicio de impresión (puerto 8001).
-    Java: ImpresionVenta.impirmir() → POST localhost:8001/print-ticket/sales
-    Body: { movement_id, flow_type, report_type, body: {} }
+    Envía la orden de impresión directo al print service (8001).
+    Si la venta es pump + factura electrónica, primero envía a 7011 para obtener CUFE y luego imprime.
+    Java: ImpresionVenta → POST http://localhost:8001/print-ticket/sales
     """
     try:
+        report_upper = req.report_type.upper()
+        is_factura = report_upper in ("FACTURA", "FACTURA-ELECTRONICA", "FACTURA_ELECTRONICA")
+
+        # Para factura electrónica: si la venta es pump+FE, enviar primero a 7011 para obtener CUFE
+        # ⚠️ EXCEPTO si el medio de pago es GoPass/AppTerpel → esperar callback del orquestador
+        if is_factura:
+            row = await database.fetch_one(
+                "SELECT atributos FROM ct_movimientos WHERE id = :mid",
+                {"mid": req.movimiento_id},
+            )
+            att = {}
+            if row is not None:
+                atributos_raw = row["atributos"]
+                if atributos_raw is not None:
+                    if isinstance(atributos_raw, str):
+                        import json as _json
+                        att = _json.loads(atributos_raw) if atributos_raw.strip() else {}
+                    else:
+                        att = dict(atributos_raw) if atributos_raw else {}
+                    if not isinstance(att, dict):
+                        att = {}
+
+            # ── Guard: verificar si es GoPass/AppTerpel en atributos ──
+            is_app_terpel = att.get("isAppTerpel", False)
+            datos_factura = att.get("DatosFactura", {})
+            medio_pago_id = datos_factura.get("medio_pago", 0) if isinstance(datos_factura, dict) else 0
+            gopass_v2 = att.get("gopass_v2")
+            # medio_pago 106=APP TERPEL, 20004=GOPASS
+            if is_app_terpel or medio_pago_id in (106, 20004) or gopass_v2:
+                print(f"[API] [FE-7011] ⏸ Medio orquestador detectado (medio_pago={medio_pago_id}, isAppTerpel={is_app_terpel}, gopass_v2={gopass_v2 is not None}) — NO se envía a 7011 ni se imprime.")
+                return {"exito": True, "mensaje": "Pago orquestador: esperando aprobación", "pendiente_orquestador": True}
+
+            payload_fe = await _build_payload_fe_from_atributos(req.movimiento_id, att) if att else None
+            if payload_fe:
+                from backend_fe_7011.fe_flow import enviar_a_7011_y_opcionalmente_imprimir
+                from backend_fe_7011.fe_7011_client import FE7011Client
+
+                host = await get_host_from_db(database)
+                base_url = ServiciosTerpel.url_base_7011(host)
+                fe_client = FE7011Client(base_url=base_url)
+                print(f"[API] [FE-7011] Enviando venta {req.movimiento_id} a 7011 antes de imprimir (URL: {base_url})")
+                result = enviar_a_7011_y_opcionalmente_imprimir(
+                    payload_fe,
+                    imprimir_despues=False,
+                    identificador_movimiento=req.movimiento_id,
+                    tipo_reporte="FACTURA-ELECTRONICA",
+                    fe_client=fe_client,
+                )
+                if not result.get("ok"):
+                    err = result.get("error", "Error enviando a 7011")
+                    print(f"[API] [FE-7011] Error 7011: {err}")
+                    return {"exito": False, "mensaje": f"Facturación electrónica: {err}"}
+                print(f"[API] [FE-7011] Venta {req.movimiento_id} enviada a 7011 OK, procediendo a imprimir")
+
         url = "http://localhost:8001/print-ticket/sales"
         body = {
             "movement_id": req.movimiento_id,
             "flow_type": "CONSULTAR_VENTAS",
-            "report_type": req.report_type.upper(),
+            "report_type": report_upper,
             "body": {},
         }
 

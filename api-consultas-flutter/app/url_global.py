@@ -93,6 +93,11 @@ class ServiciosTerpel:
     def url_consultar_cliente(cls, host: str) -> str:
         """URL para consultar cliente"""
         return build_url(host, cls.PUERTO_CONSULTA_CLIENTE, cls.PATH_CONSULTA_CLIENTE)
+
+    @classmethod
+    def url_base_7011(cls, host: str) -> str:
+        """URL base del servicio 7011 (FE). Para usar con backend_fe_7011."""
+        return build_url(host, cls.PUERTO_CONSULTA_CLIENTE, "").rstrip("/")
     
     @classmethod
     def url_orquestador_pagos(cls) -> str:

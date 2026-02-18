@@ -27,22 +27,38 @@ Endpoints:
 Puerto: 8020
 """
 
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.database import database
-from app.routers import ventas, surtidores, canastilla, configuracion, rumbo, turnos, fidelizacion
+from app.database import database, database_registry
+from app.routers import ventas, surtidores, canastilla, configuracion, rumbo, turnos, fidelizacion, gopass
+from app.ws_notifications import router as ws_router
+from backend_fe_7011.routers import fe_7011_router
+from backend_fe_7011.fe_retry import worker_loop as fe_retry_worker_loop
 
 # Lifespan para manejar conexión a DB
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: conectar a la base de datos
+    # Startup: conectar a las bases de datos
     await database.connect()
-    print("✅ Conectado a PostgreSQL")
+    print("✅ Conectado a PostgreSQL (core)")
+    await database_registry.connect()
+    print("✅ Conectado a PostgreSQL (registry)")
+    # Iniciar worker de reintentos FE en background
+    retry_task = asyncio.create_task(fe_retry_worker_loop())
+    print("✅ Worker reintentos FE iniciado")
     yield
-    # Shutdown: desconectar
+    # Shutdown: cancelar worker y desconectar
+    retry_task.cancel()
+    try:
+        await retry_task
+    except asyncio.CancelledError:
+        pass
     await database.disconnect()
+    await database_registry.disconnect()
     print("❌ Desconectado de PostgreSQL")
 
 # Crear app FastAPI
@@ -70,6 +86,9 @@ app.include_router(configuracion.router, prefix="/configuracion", tags=["Configu
 app.include_router(rumbo.router, prefix="/rumbo", tags=["Rumbo"])
 app.include_router(turnos.router, prefix="/turnos", tags=["Turnos"])
 app.include_router(fidelizacion.router, prefix="/fidelizacion", tags=["Fidelización"])
+app.include_router(gopass.router, prefix="/gopass", tags=["GoPass"])
+app.include_router(fe_7011_router)
+app.include_router(ws_router)
 
 @app.get("/", tags=["Health"])
 async def root():

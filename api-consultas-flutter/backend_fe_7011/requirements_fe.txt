@@ -1,0 +1,2 @@
+# Añadir a tu requirements.txt del backend api-consultas-flutter
+httpx>=0.24.0
