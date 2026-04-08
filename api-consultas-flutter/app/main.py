@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.database import database, database_registry
-from app.routers import ventas, surtidores, canastilla, configuracion, rumbo, turnos, fidelizacion, gopass
+from app.routers import ventas, surtidores, canastilla, configuracion, rumbo, turnos, fidelizacion, gopass, placa
 from app.ws_notifications import router as ws_router
 from backend_fe_7011.routers import fe_7011_router
 from backend_fe_7011.fe_retry import worker_loop as fe_retry_worker_loop
@@ -69,12 +69,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configurar CORS para permitir conexiones desde Flutter
+# Configurar CORS para permitir conexiones desde Flutter de manera segura
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost", "http://127.0.0.1"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -87,6 +87,7 @@ app.include_router(rumbo.router, prefix="/rumbo", tags=["Rumbo"])
 app.include_router(turnos.router, prefix="/turnos", tags=["Turnos"])
 app.include_router(fidelizacion.router, prefix="/fidelizacion", tags=["Fidelización"])
 app.include_router(gopass.router, prefix="/gopass", tags=["GoPass"])
+app.include_router(placa.router, prefix="/placa", tags=["Placa"])
 app.include_router(fe_7011_router)
 app.include_router(ws_router)
 

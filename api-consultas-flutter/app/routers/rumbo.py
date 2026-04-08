@@ -730,7 +730,7 @@ async def confirmar_venta_urea(request: ConfirmarUreaRequest):
             CAST(:p4 AS json), CAST(:p5 AS json), CAST(:p6 AS json), CAST(:p7 AS json)
         )"""
         
-        print(f"[RUMBO-UREA] Llamando fnc_insertar_ct_movimientos...")
+        print("[RUMBO-UREA] Llamando fnc_insertar_ct_movimientos...")
         print(f"[RUMBO-UREA] Promotor: {promotor['nombre']} (id={promotor['id']})")
         print(f"[RUMBO-UREA] Litros autorizados: {cantidad_maxima}")
         
@@ -1493,7 +1493,7 @@ async def _actualizar_operario_ventas_curso(cara: int, operario_id: int):
     bomba empiece. Si ya existe fila, la actualizamos como precaución.
     """
     try:
-        result = await database.execute(
+        await database.execute(
             "UPDATE ventas_curso SET operario_id = :operario WHERE cara = :cara",
             {"operario": operario_id, "cara": cara}
         )

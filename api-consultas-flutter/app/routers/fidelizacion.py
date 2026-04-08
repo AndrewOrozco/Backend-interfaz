@@ -11,7 +11,7 @@ Flujo:
 Java: LoyaltiesEndpoints.java, FidelizacionCliente.java, FidelizacionFacade.java
 Puerto 10462 = proxy local lazo.loyalty (orquestador)
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional, List
 import json

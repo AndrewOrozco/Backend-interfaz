@@ -154,7 +154,11 @@ async def consultar_cliente_externo(
         print(f"[URL_GLOBAL] Headers: {headers}")
         print(f"[URL_GLOBAL] Body: {body}")
         
-        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
+        # SECURITY NOTE (ISO 27001 / CWE-295): El servicio Terpel usa HTTPS con
+        # certificado autofirmado interno. Cuando esté disponible el certificado CA
+        # corporativo, reemplazar verify=False por verify="/ruta/al/terpel_ca.pem"
+        # TODO: Obtener certificado CA desde configuración o variable de entorno TERPEL_CA_CERT
+        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:  # nosec B501
             response = await client.post(url, json=body, headers=headers)
             
             if response.status_code == 200:

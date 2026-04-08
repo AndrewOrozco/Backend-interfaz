@@ -7,7 +7,7 @@ Usa las mismas funciones SQL que la UI de Java:
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 import json
 import httpx
 
@@ -23,7 +23,7 @@ FIDELIZACION_HEADERS = {
     "Content-Type": "application/json",
     "Accept": "application/json",
     "Accept-Encoding": "identity",
-    "Authorization": "Basic cGFzc3BvcnR4OlQ0MUFYUWtYSjh6",
+    "Authorization": settings.FIDELIZACION_TOKEN,
     "aplicacion": "lazoexpress",
     "dispositivo": "proyectos",
 }
@@ -143,12 +143,12 @@ async def _buscar_movimiento_por_cara(cara: int) -> dict | None:
                 cm_atributos = parse_atributos(d['atributos'])
                 if cm_atributos.get('statusPump'):
                     status_pump = True
-                    print(f"[API] statusPump=True (fallback: ct_movimientos.atributos)")
+                    print("[API] statusPump=True (fallback: ct_movimientos.atributos)")
                 elif cm_atributos.get('factura_electronica'):
                     fe_val = cm_atributos['factura_electronica']
                     if isinstance(fe_val, dict):
                         status_pump = True
-                        print(f"[API] statusPump=True (fallback: factura_electronica en ct_movimientos)")
+                        print("[API] statusPump=True (fallback: factura_electronica en ct_movimientos)")
                     elif isinstance(fe_val, str) and fe_val.upper() in ('SI', 'YES', 'TRUE'):
                         status_pump = True
                         print(f"[API] statusPump=True (fallback: factura_electronica={fe_val} en ct_movimientos)")
@@ -262,7 +262,8 @@ async def obtener_jornada_activa():
             }
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error obteniendo jornada: {str(e)}")
+        print(f"[API] Error obteniendo jornada activa: {str(e)}")
+        raise HTTPException(status_code=500, detail="Fallo interno obteniendo jornada activa")
 
 
 @router.get("/sin-resolver")
@@ -304,20 +305,29 @@ async def obtener_ventas_sin_resolver(
                 jornada_id = 0
             print(f"[API] Jornada activa: {jornada_id}, Promotor: {promotor_id}")
         
-        # Usar la misma función que Java - pasar límite alto para obtener todos
-        # y luego paginar en Python
-        query = "SELECT * FROM fnc_consultar_ventas_pendientes(:jornada_id, :promotor_id, :limite_sql)"
-        
-        rows = await database.fetch_all(
-            query, 
-            {"jornada_id": jornada_id, "promotor_id": promotor_id, "limite_sql": 1000}
+        # Calcular OFFSET y LIMIT en SQL
+        offset_sql = (pagina - 1) * limite
+        limit_sql = limite
+
+        count_query = "SELECT COUNT(*) FROM fnc_consultar_ventas_pendientes(:jornada_id, :promotor_id, 1000000)"
+        total_row = await database.fetch_one(
+            count_query, 
+            {"jornada_id": jornada_id, "promotor_id": promotor_id}
         )
+        total_registros = total_row[0] if total_row else 0
         
-        # Paginación manual
-        total_registros = len(rows)
-        inicio = (pagina - 1) * limite
-        fin = inicio + limite
-        rows_paginadas = list(rows[inicio:fin]) if inicio < len(rows) else []
+        # Consultar solo los registros que corresponden a la página usando offset y limit
+        query = "SELECT * FROM fnc_consultar_ventas_pendientes(:jornada_id, :promotor_id, 1000000) OFFSET :offset_sql LIMIT :limit_sql"
+        rows_paginadas = await database.fetch_all(
+            query, 
+            {
+                "jornada_id": jornada_id, 
+                "promotor_id": promotor_id,
+                "offset_sql": offset_sql,
+                "limit_sql": limit_sql
+            }
+        )
+
         
         ventas = []
         for row in rows_paginadas:
@@ -408,7 +418,8 @@ async def obtener_ventas_sin_resolver(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error consultando ventas: {str(e)}")
+        print(f"[API] Error consultando ventas sin resolver: {str(e)}")
+        raise HTTPException(status_code=500, detail="Fallo consultando ventas sin resolver")
 
 
 @router.get("/historial")
@@ -445,20 +456,29 @@ async def obtener_historial_ventas(
                 jornada_id = 0
             print(f"[API] Historial - Jornada: {jornada_id}, Promotor: {promotor_id}")
         
-        # Usar la misma función que Java - pasar límite alto para obtener todos
-        # y luego paginar en Python
-        query = "SELECT * FROM fnc_consultar_ventas(:jornada_id, :promotor_id, :limite_sql)"
-        
-        rows = await database.fetch_all(
-            query, 
-            {"jornada_id": jornada_id, "promotor_id": promotor_id, "limite_sql": 1000}
+        # Calcular OFFSET y LIMIT en SQL
+        offset_sql = (pagina - 1) * limite
+        limit_sql = limite
+
+        count_query = "SELECT COUNT(*) FROM fnc_consultar_ventas(:jornada_id, :promotor_id, 1000000)"
+        total_row = await database.fetch_one(
+            count_query, 
+            {"jornada_id": jornada_id, "promotor_id": promotor_id}
         )
+        total_registros = total_row[0] if total_row else 0
         
-        # Paginación manual
-        total_registros = len(rows)
-        inicio = (pagina - 1) * limite
-        fin = inicio + limite
-        rows_paginadas = list(rows[inicio:fin]) if inicio < len(rows) else []
+        # Consultar solo los registros que corresponden a la página usando offset y limit
+        query = "SELECT * FROM fnc_consultar_ventas(:jornada_id, :promotor_id, 1000000) OFFSET :offset_sql LIMIT :limit_sql"
+        rows_paginadas = await database.fetch_all(
+            query, 
+            {
+                "jornada_id": jornada_id, 
+                "promotor_id": promotor_id,
+                "offset_sql": offset_sql,
+                "limit_sql": limit_sql
+            }
+        )
+
         
         ventas = []
         for row in rows_paginadas:
@@ -515,7 +535,8 @@ async def obtener_historial_ventas(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error consultando historial: {str(e)}")
+        print(f"[API] Error consultando historial: {str(e)}")
+        raise HTTPException(status_code=500, detail="Fallo interno consultando historial")
 
 
 @router.get("/resumen")
@@ -550,7 +571,8 @@ async def obtener_resumen_ventas():
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error obteniendo resumen: {str(e)}")
+        print(f"[API] Error obteniendo resumen: {str(e)}")
+        raise HTTPException(status_code=500, detail="Fallo interno obteniendo resumen")
 
 
 # ============================================================
@@ -859,8 +881,6 @@ async def obtener_medios_pago(
 # ACTUALIZAR MEDIOS DE PAGO
 # ============================================================
 
-from pydantic import BaseModel
-from typing import List, Optional
 
 class MedioPagoInput(BaseModel):
     ct_medios_pagos_id: int
@@ -1050,17 +1070,17 @@ async def guardar_medio_ventas_curso(request: GuardarMedioVentaCursoRequest):
         row = await database.fetch_one(query, {"cara": request.cara})
         
         if not row:
-            return {
-                "success": False,
-                "message": f"No se encontró venta en curso para cara {request.cara}"
-            }
-        
-        atributos = {}
-        if row['atributos']:
-            if isinstance(row['atributos'], str):
-                atributos = json.loads(row['atributos'])
-            else:
-                atributos = dict(row['atributos'])
+            inserting = True
+            atributos = {}
+            print(f"[API] No se encontró fila en ventas_curso, creando nueva fila para cara {request.cara}")
+        else:
+            inserting = False
+            atributos = {}
+            if row['atributos']:
+                if isinstance(row['atributos'], str):
+                    atributos = json.loads(row['atributos'])
+                else:
+                    atributos = dict(row['atributos'])
         
         # 2. Limpiar atributos previos (Java: eliminarAtributosVenta)
         # Elimina gopass_v2, datafono, isAppTerpel
@@ -1100,18 +1120,23 @@ async def guardar_medio_ventas_curso(request: GuardarMedioVentaCursoRequest):
         # 5. statusPump flag
         atributos['statusPump'] = 'factura_electronica' in atributos
         
-        # 6. UPDATE ventas_curso (Java: "update ventas_curso set atributos=?::json where cara=?")
-        update_query = """
-            UPDATE ventas_curso 
-            SET atributos = CAST(:atributos AS json) 
-            WHERE cara = :cara
-        """
-        await database.execute(update_query, {
-            "atributos": json.dumps(atributos),
-            "cara": request.cara
-        })
+        # 6. UPDATE ventas_curso (sólo si existe)
+        if inserting:
+            print(f"[API] No se puede asignar medio porque no hay venta en curso (ventas_curso vacío para cara {request.cara})")
+            return {"success": False, "message": "No hay una venta en curso en este surtidor. Espere a que Gilbarco inicie la venta (levantar manguera)."}
+        else:
+            update_query = """
+                UPDATE ventas_curso 
+                SET atributos = CAST(:atributos AS json) 
+                WHERE cara = :cara
+            """
+            await database.execute(update_query, {
+                "atributos": json.dumps(atributos),
+                "cara": request.cara
+            })
+
         
-        print(f"[API] ventas_curso actualizado OK para cara {request.cara}")
+        print(f"[API] ventas_curso actualizado/insertado OK para cara {request.cara}")
         print(f"[API] Atributos: {json.dumps(atributos)[:300]}...")
         
         # ── TAMBIÉN persistir en ct_movimientos.atributos ──
@@ -1235,17 +1260,17 @@ async def guardar_datos_factura_ventas_curso(request: GuardarDatosFacturaVentasC
         row = await database.fetch_one(query, {"cara": request.cara})
         
         if not row:
-            return {
-                "success": False,
-                "message": f"No se encontró venta en curso para cara {request.cara}"
-            }
-        
-        atributos = {}
-        if row['atributos']:
-            if isinstance(row['atributos'], str):
-                atributos = json_lib.loads(row['atributos'])
-            else:
-                atributos = dict(row['atributos'])
+            inserting_fe = True
+            atributos = {}
+            print(f"[API] No se encontró fila en ventas_curso, creando nueva fila para cara {request.cara}")
+        else:
+            inserting_fe = False
+            atributos = {}
+            if row['atributos']:
+                if isinstance(row['atributos'], str):
+                    atributos = json_lib.loads(row['atributos'])
+                else:
+                    atributos = dict(row['atributos'])
         
         # 2. Actualizar/mantener DatosFactura
         datos_factura = atributos.get('DatosFactura', {})
@@ -1391,17 +1416,19 @@ async def guardar_datos_factura_ventas_curso(request: GuardarDatosFacturaVentasC
         # 6. statusPump flag (Java: statusPump = factura_electronica exists)
         atributos['statusPump'] = 'factura_electronica' in atributos
         
-        # 7. UPDATE ventas_curso
-        update_query = """
-            UPDATE ventas_curso 
-            SET atributos = CAST(:atributos AS json) 
-            WHERE cara = :cara
-        """
+        # 7. UPDATE o INSERT ventas_curso
         atributos_json = json_lib.dumps(atributos)
-        await database.execute(update_query, {
-            "atributos": atributos_json,
-            "cara": request.cara
-        })
+        if inserting_fe:
+            try:
+                insert_query = "INSERT INTO ventas_curso (cara, atributos) VALUES (:cara, CAST(:atributos AS json))"
+                await database.execute(insert_query, {"atributos": atributos_json, "cara": request.cara})
+            except Exception as ins_fe:
+                print(f"[API] Ups, error insertando FE: {ins_fe}. Actualizando...")
+                update_query = "UPDATE ventas_curso SET atributos = CAST(:atributos AS json) WHERE cara = :cara"
+                await database.execute(update_query, {"atributos": atributos_json, "cara": request.cara})
+        else:
+            update_query = "UPDATE ventas_curso SET atributos = CAST(:atributos AS json) WHERE cara = :cara"
+            await database.execute(update_query, {"atributos": atributos_json, "cara": request.cara})
         
         print(f"[API] ventas_curso actualizado OK para cara {request.cara}")
         print(f"[API] statusPump={atributos.get('statusPump')}")
@@ -1777,7 +1804,7 @@ async def actualizar_datos_venta(request: ActualizarDatosVentaRequest):
         try:
             prc_query = f"CALL prc_registrar_cliente_movimiento({request.movimiento_id}, 0, 2, '{{}}' ::json)"
             await database.execute(prc_query)
-            print(f"[API] prc_registrar_cliente_movimiento ejecutado OK")
+            print("[API] prc_registrar_cliente_movimiento ejecutado OK")
         except Exception as prc_err:
             # El procedimiento puede no existir en todas las instalaciones
             print(f"[API] prc_registrar_cliente_movimiento no disponible: {prc_err}")
@@ -1948,7 +1975,7 @@ async def asignar_appterpel_venta(request: AsignarAppTerpelRequest):
             "mov_id": request.movimiento_id
         })
         
-        print(f"[API] APP TERPEL asignado: isAppTerpel=true, sincronizado=4 (pendiente)")
+        print("[API] APP TERPEL asignado: isAppTerpel=true, sincronizado=4 (pendiente)")
         
         return {
             "success": True,

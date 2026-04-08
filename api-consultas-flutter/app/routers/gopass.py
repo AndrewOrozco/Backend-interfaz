@@ -9,7 +9,6 @@ Estado check: POST http://localhost:7011/api/consultaEstado
 """
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-from typing import Optional
 import httpx
 
 from app.database import database
@@ -319,7 +318,7 @@ async def procesar_pago_gopass(req: ProcesarPagoRequest):
         # Java: GoPassCarPlateRepository.updateData() →
         #   UPDATE ct_movimientos SET atributos = jsonb_set(atributos::jsonb, '{vehiculo_placa}', to_jsonb(?::varchar)) WHERE id = ?
         # El servicio GoPass (8045) lee vehiculo_placa de la BD para procesar el pago.
-        print(f"[GOPASS] === PASO 1: Actualizando vehiculo_placa en BD ===")
+        print("[GOPASS] === PASO 1: Actualizando vehiculo_placa en BD ===")
         print(f"[GOPASS] venta_id={req.venta_id}, placa={req.placa}")
         try:
             await _actualizar_movimiento_gopass(
@@ -359,7 +358,7 @@ async def procesar_pago_gopass(req: ProcesarPagoRequest):
             "medioDescription": "GOPASS",
         }
 
-        print(f"[GOPASS] === PASO 2: Enviando pago al orquestador Go ===")
+        print("[GOPASS] === PASO 2: Enviando pago al orquestador Go ===")
         print(f"[GOPASS] POST {url}")
         print(f"[GOPASS] Body: {body}")
 

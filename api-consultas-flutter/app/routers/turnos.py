@@ -154,10 +154,17 @@ async def obtener_totalizadores(req: TotalizadorRequest):
         data = response.json()
         print(f"[TURNOS] Totalizadores surtidor {req.surtidor}: {json.dumps(data, indent=2)[:500]}")
 
+        mensaje_raw = data.get("mensajeError", "Error desconocido")
+        if isinstance(mensaje_raw, str):
+            # Arreglar Mojibake clásico (utf-8 parseado como windows-1252/latin1) enviado por Java
+            mensaje_raw = mensaje_raw.replace("informaciÃ³n", "información")
+            mensaje_raw = mensaje_raw.replace("comunicaciÃ³n", "comunicación")
+            mensaje_raw = mensaje_raw.replace("Ã³", "ó").replace("Ã¡", "á").replace("Ã©", "é").replace("Ã­", "í").replace("Ãº", "ú").replace("Ã±", "ñ")
+
         if "codigoError" in data:
             return {
                 "exito": False,
-                "mensaje": data.get("mensajeError", "Error desconocido"),
+                "mensaje": mensaje_raw,
                 "codigo_error": data.get("codigoError"),
                 "data": [],
             }

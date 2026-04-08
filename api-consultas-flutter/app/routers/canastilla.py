@@ -9,7 +9,7 @@ Constantes Java:
 """
 import json as json_lib
 import re
-from datetime import date, datetime
+from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query

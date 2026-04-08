@@ -1,0 +1,28 @@
+# Gitignore para entorno Backend Python (FastAPI / Windows / LazoExpress)
+
+# Archivos de caché y ejecutables
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Configuración y secretos (OBLIGATORIO IGNORAR SEGÚN ISO 27001)
+.env
+secret.key
+
+# Archivos de compilación de PyInstaller
+build/
+dist/
+*.spec
+
+# Archivos del sistema y de IDEs
+.vscode/
+.idea/
+*.swp
+.ruff_cache/
+.pytest_cache/

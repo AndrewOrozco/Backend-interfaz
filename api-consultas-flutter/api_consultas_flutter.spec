@@ -5,24 +5,45 @@ block_cipher = None
 
 # Imports que PyInstaller no detecta solo
 hidden_imports = [
+    # ── Uvicorn ──────────────────────────────────────────────
     'uvicorn.logging',
     'uvicorn.loops',
     'uvicorn.loops.auto',
+    'uvicorn.loops.asyncio',
     'uvicorn.protocols',
     'uvicorn.protocols.http',
     'uvicorn.protocols.http.auto',
+    'uvicorn.protocols.http.h11_impl',
     'uvicorn.protocols.websockets',
     'uvicorn.protocols.websockets.auto',
+    'uvicorn.protocols.websockets.websockets_impl',
     'uvicorn.lifespan',
     'uvicorn.lifespan.on',
     'uvicorn.main',
+    # ── databases (usa import_from_string → PyInstaller no lo ve) ──
     'databases',
     'databases.core',
-    'aiopg',
+    'databases.backends',
+    'databases.backends.asyncpg',
+    'databases.backends.aiopg',
+    'databases.backends.aiomysql',
+    'databases.backends.postgres',   # ← URL scheme postgresql → mapea a este módulo
+    'databases.backends.mysql',
+    'databases.backends.sqlite',
+    # ── asyncpg (C extension, varios sub-módulos necesarios) ──────
+    'asyncpg',
+    'asyncpg.pgproto',
+    'asyncpg.pgproto.pgproto',
+    'asyncpg.protocol',
+    'asyncpg.protocol.protocol',
+    # ── HTTP / Pydantic / Dotenv ──────────────────────────────────
     'httpx',
     'pydantic',
     'pydantic_settings',
     'dotenv',
+    'websockets',
+    'websockets.legacy',
+    'websockets.legacy.server',
 ]
 
 a = Analysis(

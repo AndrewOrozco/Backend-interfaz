@@ -1,10 +1,11 @@
 # FastAPI y servidor
 fastapi
-uvicorn
+uvicorn[standard]
+websockets
 
-# Base de datos - usando aiopg
-databases[aiopg]
-aiopg
+# Base de datos - usando asyncpg (compatible con Python 3.14+ en Windows)
+databases[asyncpg]
+asyncpg
 psycopg2
 
 # HTTP Client para servicios externos
