@@ -53,6 +53,47 @@ class SurtidoresService:
         return resultados
 
     @staticmethod
+    async def obtener_catalogo_mangueras_precios() -> dict:
+        """
+        Obtiene el catálogo de todas las caras, mangueras, y el precio del producto asigando.
+        Basado en SetupDao.getCaras() del sistema legacy.
+        Retorna mapeado para ser usado en Venta Manual (Contingencia).
+        """
+        query = """
+            SELECT 
+                sur.cara, 
+                sur.manguera, 
+                p.id as producto_id,
+                p.descripcion as producto_desc, 
+                p.precio 
+            FROM surtidores_detalles sur
+            INNER JOIN productos p ON p.id = sur.productos_id 
+            INNER JOIN surtidores s ON sur.surtidores_id = s.id 
+            WHERE s.estado = 'A'
+            ORDER BY sur.cara ASC, sur.manguera ASC
+        """
+        try:
+            rows = await database.fetch_all(query)
+            # Agrupar por Cara para un consumo ágil en Flutter
+            caras_dict = {}
+            for row in rows:
+                cara = str(row["cara"])
+                if cara not in caras_dict:
+                    caras_dict[cara] = {"mangueras": []}
+                
+                caras_dict[cara]["mangueras"].append({
+                    "manguera": str(row["manguera"]),
+                    "producto_id": row["producto_id"],
+                    "producto_desc": row["producto_desc"],
+                    "precio": float(row["precio"]) if row["precio"] else 0.0
+                })
+            
+            return {"exito": True, "caras": caras_dict}
+        except Exception as e:
+            print(f"[SURTIDORES] Error en obtener_catalogo_mangueras_precios: {e}")
+            return {"exito": False, "caras": {}, "error": str(e)}
+
+    @staticmethod
     async def arreglar_salto_lectura(configuracion_id: int) -> bool:
         """
         Envía comando al Core Gilbarco para corregir el salto de lectura.
